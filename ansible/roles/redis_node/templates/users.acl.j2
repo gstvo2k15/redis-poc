@@ -1,0 +1,4 @@
+user default off
+user {{ redis_admin_user }} on >{{ redis_admin_password }} ~* &* +@all
+user {{ redis_app_user }} on >{{ redis_app_password }} ~app:* &* +@read +@write +ping +cluster|slots +cluster|shards
+user {{ redis_backup_user }} on >{{ redis_backup_password }} ~* &* +ping +info +bgsave +lastsave +config|get

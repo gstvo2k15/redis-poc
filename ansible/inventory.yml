@@ -1,0 +1,29 @@
+all:
+  children:
+    redis_nodes:
+      hosts:
+        redis01:
+          ansible_connection: local
+          ansible_host: 192.168.56.11
+          redis_node_ip: 192.168.56.11
+        redis02:
+          ansible_host: 192.168.56.12
+          ansible_user: vagrant
+          ansible_ssh_private_key_file: /vagrant/.vagrant/machines/redis02/virtualbox/private_key
+          redis_node_ip: 192.168.56.12
+        redis03:
+          ansible_host: 192.168.56.13
+          ansible_user: vagrant
+          ansible_ssh_private_key_file: /vagrant/.vagrant/machines/redis03/virtualbox/private_key
+          redis_node_ip: 192.168.56.13
+    redis_controller:
+      hosts:
+        redis01:
+    redis_replicas:
+      hosts:
+        redis01:
+          redis_replica_port: 7001
+        redis02:
+          redis_replica_port: 7001
+        redis03:
+          redis_replica_port: 7001

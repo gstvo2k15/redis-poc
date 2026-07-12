@@ -1,0 +1,61 @@
+- name: Backup all replicas
+  hosts: redis_replicas
+  become: true
+  serial: 0
+  vars:
+    stamp: "{{ lookup('pipe','date -u +%Y%m%dT%H%M%SZ') }}"
+  tasks:
+    - name: Check replication
+      ansible.builtin.command:
+        argv: [redis-cli,--tls,--cacert,/etc/redis/tls/ca.crt,--cert,/etc/redis/tls/backup.crt,--key,/etc/redis/tls/backup.key,--user,"{{ redis_backup_user }}",-a,"{{ redis_backup_password }}",--no-auth-warning,-h,"{{ redis_node_ip }}",-p,"7001",INFO,replication]
+      register: repl
+      changed_when: false
+    - ansible.builtin.assert:
+        that:
+          - "'master_link_status:up' in repl.stdout"
+          - "'master_sync_in_progress:0' in repl.stdout"
+    - name: BGSAVE
+      ansible.builtin.command:
+        argv: [redis-cli,--tls,--cacert,/etc/redis/tls/ca.crt,--cert,/etc/redis/tls/backup.crt,--key,/etc/redis/tls/backup.key,--user,"{{ redis_backup_user }}",-a,"{{ redis_backup_password }}",--no-auth-warning,-h,"{{ redis_node_ip }}",-p,"7001",BGSAVE]
+    - name: Wait for completion
+      ansible.builtin.command:
+        argv: [redis-cli,--tls,--cacert,/etc/redis/tls/ca.crt,--cert,/etc/redis/tls/backup.crt,--key,/etc/redis/tls/backup.key,--user,"{{ redis_backup_user }}",-a,"{{ redis_backup_password }}",--no-auth-warning,-h,"{{ redis_node_ip }}",-p,"7001",INFO,persistence]
+      register: pers
+      changed_when: false
+      until:
+        - "'rdb_bgsave_in_progress:0' in pers.stdout"
+        - "'rdb_last_bgsave_status:ok' in pers.stdout"
+      retries: 120
+      delay: 1
+    - name: Fetch RDB to controller
+      ansible.builtin.fetch:
+        src: /var/lib/redis/7001/dump.rdb
+        dest: "/tmp/{{ inventory_hostname }}-7001.rdb"
+        flat: true
+- name: Assemble backup set
+  hosts: redis_controller
+  become: true
+  tasks:
+    - name: Timestamp
+      ansible.builtin.command: date -u +%Y%m%dT%H%M%SZ
+      register: ts
+      changed_when: false
+    - name: Create destination
+      ansible.builtin.file: {path: "{{ redis_backup_root }}/{{ ts.stdout }}", state: directory, mode: '0750'}
+    - name: Copy fetched RDBs
+      ansible.builtin.copy:
+        src: "/tmp/{{ item }}-7001.rdb"
+        dest: "{{ redis_backup_root }}/{{ ts.stdout }}/{{ item }}-7001.rdb"
+        remote_src: true
+        mode: '0640'
+      loop: [redis01,redis02,redis03]
+    - name: Manifest
+      ansible.builtin.copy:
+        dest: "{{ redis_backup_root }}/{{ ts.stdout }}/MANIFEST.txt"
+        mode: '0640'
+        content: |
+          redis03-7001.rdb -> redis01:7000
+          redis01-7001.rdb -> redis02:7000
+          redis02-7001.rdb -> redis03:7000
+    - name: Checksums
+      ansible.builtin.shell: "cd {{ redis_backup_root }}/{{ ts.stdout }} && sha256sum *.rdb > SHA256SUMS"

@@ -1,0 +1,46 @@
+- name: Define CLI
+  ansible.builtin.set_fact:
+    cli: "redis-cli --tls --cacert /etc/redis/tls/ca.crt --cert /etc/redis/tls/admin.crt --key /etc/redis/tls/admin.key --user {{ redis_admin_user }} -a '{{ redis_admin_password }}' --no-auth-warning"
+- name: Current cluster info
+  ansible.builtin.shell: "{{ cli }} -h 192.168.56.11 -p 7000 CLUSTER INFO"
+  register: current
+  failed_when: false
+  changed_when: false
+  no_log: true
+- name: Create primaries
+  ansible.builtin.shell: |
+    yes yes | {{ cli }} --cluster create 192.168.56.11:7000 192.168.56.12:7000 192.168.56.13:7000 --cluster-replicas 0
+  when: "'cluster_state:ok' not in current.stdout"
+  no_log: true
+- name: Read master IDs
+  ansible.builtin.shell: "{{ cli }} -h {{ item }} -p 7000 CLUSTER MYID"
+  loop: [192.168.56.11,192.168.56.12,192.168.56.13]
+  register: ids
+  changed_when: false
+  no_log: true
+- name: ID map
+  ansible.builtin.set_fact:
+    mid:
+      192.168.56.11: "{{ ids.results[0].stdout | trim }}"
+      192.168.56.12: "{{ ids.results[1].stdout | trim }}"
+      192.168.56.13: "{{ ids.results[2].stdout | trim }}"
+- name: Known nodes
+  ansible.builtin.shell: "{{ cli }} -h 192.168.56.11 -p 7000 CLUSTER NODES"
+  register: nodes
+  changed_when: false
+  no_log: true
+- name: Add replicas
+  ansible.builtin.shell: "{{ cli }} --cluster add-node {{ item.replica }} 192.168.56.11:7000 --cluster-slave --cluster-master-id {{ mid[item.master] }}"
+  loop:
+    - {replica: '192.168.56.11:7001', master: '192.168.56.12'}
+    - {replica: '192.168.56.12:7001', master: '192.168.56.13'}
+    - {replica: '192.168.56.13:7001', master: '192.168.56.11'}
+  when: "item.replica not in nodes.stdout"
+  no_log: true
+- ansible.builtin.pause: {seconds: 5}
+- name: Final check
+  ansible.builtin.shell: "{{ cli }} --cluster check 192.168.56.11:7000"
+  register: final
+  changed_when: false
+  no_log: true
+- ansible.builtin.debug: {var: final.stdout_lines}

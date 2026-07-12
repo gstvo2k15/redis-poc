@@ -1,0 +1,55 @@
+- name: Ensure PKI directory
+  ansible.builtin.file: {path: "{{ redis_pki_root }}", state: directory, mode: '0700'}
+- name: Generate CA key
+  ansible.builtin.command: "openssl genrsa -out {{ redis_pki_root }}/ca.key 4096"
+  args: {creates: "{{ redis_pki_root }}/ca.key"}
+- name: Generate CA certificate
+  ansible.builtin.command: >-
+    openssl req -x509 -new -sha256 -days 3650
+    -key {{ redis_pki_root }}/ca.key
+    -out {{ redis_pki_root }}/ca.crt
+    -subj /CN=Redis-Lab-Root-CA/O=Redis-Lab
+  args: {creates: "{{ redis_pki_root }}/ca.crt"}
+- name: Generate node certificates
+  ansible.builtin.shell: |
+    openssl genrsa -out {{ redis_pki_root }}/{{ item.name }}.key 3072
+    cat > {{ redis_pki_root }}/{{ item.name }}.cnf <<EOF
+    [req]
+    distinguished_name=dn
+    req_extensions=req_ext
+    prompt=no
+    [dn]
+    CN={{ item.name }}
+    O=Redis Lab
+    [req_ext]
+    subjectAltName=@san
+    keyUsage=critical,digitalSignature,keyEncipherment
+    extendedKeyUsage=serverAuth,clientAuth
+    [san]
+    DNS.1={{ item.name }}
+    DNS.2={{ item.name }}.lab.local
+    IP.1={{ item.ip }}
+    EOF
+    openssl req -new -key {{ redis_pki_root }}/{{ item.name }}.key -out {{ redis_pki_root }}/{{ item.name }}.csr -config {{ redis_pki_root }}/{{ item.name }}.cnf
+    openssl x509 -req -sha256 -days 825 -in {{ redis_pki_root }}/{{ item.name }}.csr -CA {{ redis_pki_root }}/ca.crt -CAkey {{ redis_pki_root }}/ca.key -CAcreateserial -out {{ redis_pki_root }}/{{ item.name }}.crt -extensions req_ext -extfile {{ redis_pki_root }}/{{ item.name }}.cnf
+  args: {creates: "{{ redis_pki_root }}/{{ item.name }}.crt"}
+  loop: "{{ redis_nodes }}"
+- name: Generate client certificates
+  ansible.builtin.shell: |
+    openssl genrsa -out {{ redis_pki_root }}/{{ item }}.key 3072
+    cat > {{ redis_pki_root }}/{{ item }}.cnf <<EOF
+    [req]
+    distinguished_name=dn
+    req_extensions=req_ext
+    prompt=no
+    [dn]
+    CN=redis-lab-{{ item }}
+    O=Redis Lab
+    [req_ext]
+    keyUsage=critical,digitalSignature,keyEncipherment
+    extendedKeyUsage=clientAuth
+    EOF
+    openssl req -new -key {{ redis_pki_root }}/{{ item }}.key -out {{ redis_pki_root }}/{{ item }}.csr -config {{ redis_pki_root }}/{{ item }}.cnf
+    openssl x509 -req -sha256 -days 825 -in {{ redis_pki_root }}/{{ item }}.csr -CA {{ redis_pki_root }}/ca.crt -CAkey {{ redis_pki_root }}/ca.key -CAcreateserial -out {{ redis_pki_root }}/{{ item }}.crt -extensions req_ext -extfile {{ redis_pki_root }}/{{ item }}.cnf
+  args: {creates: "{{ redis_pki_root }}/{{ item }}.crt"}
+  loop: [admin, backup]

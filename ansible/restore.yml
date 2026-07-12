@@ -1,0 +1,49 @@
+- name: Validate backup
+  hosts: redis_controller
+  become: true
+  tasks:
+    - ansible.builtin.assert:
+        that: ["backup_set is defined", "backup_set | length > 0"]
+    - ansible.builtin.set_fact:
+        backup_path: "{{ backup_set if backup_set.startswith('/') else '/vagrant/' + backup_set }}"
+    - ansible.builtin.command:
+        cmd: sha256sum -c SHA256SUMS
+        chdir: "{{ backup_path }}"
+- name: Stop Redis
+  hosts: redis_nodes
+  become: true
+  tasks:
+    - ansible.builtin.systemd: {name: "redis@{{ item }}", state: stopped}
+      loop: [7000,7001]
+- name: Restore primaries
+  hosts: redis_nodes
+  become: true
+  vars:
+    restore_map:
+      redis01: redis03-7001.rdb
+      redis02: redis01-7001.rdb
+      redis03: redis02-7001.rdb
+  tasks:
+    - ansible.builtin.set_fact:
+        backup_path: "{{ backup_set if backup_set.startswith('/') else '/vagrant/' + backup_set }}"
+    - ansible.builtin.file: {path: /var/lib/redis/7000/appendonlydir, state: absent}
+    - ansible.builtin.file: {path: /var/lib/redis/7001/appendonlydir, state: absent}
+    - ansible.builtin.file: {path: /var/lib/redis/7001/dump.rdb, state: absent}
+    - ansible.builtin.copy:
+        src: "{{ backup_path }}/{{ restore_map[inventory_hostname] }}"
+        dest: /var/lib/redis/7000/dump.rdb
+        owner: redis
+        group: redis
+        mode: '0640'
+- name: Start primaries
+  hosts: redis_nodes
+  become: true
+  tasks:
+    - ansible.builtin.systemd: {name: redis@7000, state: started}
+- name: Start replicas
+  hosts: redis_nodes
+  become: true
+  tasks:
+    - ansible.builtin.pause: {seconds: 5}
+      run_once: true
+    - ansible.builtin.systemd: {name: redis@7001, state: started}

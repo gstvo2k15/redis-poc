@@ -1,0 +1,12 @@
+- name: Generate PKI
+  hosts: redis_controller
+  become: true
+  roles: [redis_pki]
+- name: Configure Redis nodes
+  hosts: redis_nodes
+  become: true
+  roles: [redis_os, redis_node]
+- name: Create Redis Cluster
+  hosts: redis_controller
+  become: true
+  roles: [redis_cluster]

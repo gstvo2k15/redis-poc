@@ -1,0 +1,57 @@
+- name: TLS directory
+  ansible.builtin.file: {path: "{{ redis_tls_dir }}", state: directory, owner: redis, group: redis, mode: '0750'}
+- name: Install CA
+  ansible.builtin.copy: {src: "{{ redis_pki_root }}/ca.crt", dest: "{{ redis_tls_dir }}/ca.crt", owner: redis, group: redis, mode: '0644'}
+- name: Install node certificate
+  ansible.builtin.copy: {src: "{{ redis_pki_root }}/{{ inventory_hostname }}.crt", dest: "{{ redis_tls_dir }}/node.crt", owner: redis, group: redis, mode: '0644'}
+- name: Install node key
+  ansible.builtin.copy: {src: "{{ redis_pki_root }}/{{ inventory_hostname }}.key", dest: "{{ redis_tls_dir }}/node.key", owner: redis, group: redis, mode: '0600'}
+- name: Install client certificates
+  ansible.builtin.copy: {src: "{{ redis_pki_root }}/{{ item }}.crt", dest: "{{ redis_tls_dir }}/{{ item }}.crt", owner: redis, group: redis, mode: '0644'}
+  loop: [admin, backup]
+- name: Install client keys
+  ansible.builtin.copy: {src: "{{ redis_pki_root }}/{{ item }}.key", dest: "{{ redis_tls_dir }}/{{ item }}.key", owner: redis, group: redis, mode: '0600'}
+  loop: [admin, backup]
+- name: ACL file
+  ansible.builtin.template: {src: users.acl.j2, dest: "{{ redis_acl_file }}", owner: redis, group: redis, mode: '0640'}
+- name: Runtime directories
+  ansible.builtin.file: {path: "{{ item.0 }}/{{ item.1 }}", state: directory, owner: redis, group: redis, mode: '0750'}
+  loop: "{{ [redis_data_root, redis_log_root] | product([7000,7001]) | list }}"
+- name: Redis configs
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "/etc/redis/redis-{{ item }}.conf"
+    owner: redis
+    group: redis
+    mode: '0640'
+  vars: {redis_instance_port: "{{ item }}"}
+  loop: [7000,7001]
+- name: Systemd template
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/redis@.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Redis Cluster instance on port %i
+      After=network-online.target disable-thp.service
+      Wants=network-online.target
+      [Service]
+      Type=notify
+      User=redis
+      Group=redis
+      ExecStart=/usr/bin/redis-server /etc/redis/redis-%i.conf --supervised systemd
+      ExecStop=/bin/kill -s TERM $MAINPID
+      Restart=on-failure
+      RestartSec=2
+      LimitNOFILE=65535
+      TimeoutStopSec=30
+      UMask=0027
+      [Install]
+      WantedBy=multi-user.target
+- name: Enable instances
+  ansible.builtin.systemd:
+    name: "redis@{{ item }}"
+    state: restarted
+    enabled: true
+    daemon_reload: true
+  loop: [7000,7001]

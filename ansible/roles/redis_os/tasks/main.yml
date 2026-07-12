@@ -1,0 +1,42 @@
+- name: Install packages
+  ansible.builtin.apt:
+    name: [redis-server, redis-tools, openssl, rsync]
+    state: present
+    update_cache: true
+- name: Disable default Redis service
+  ansible.builtin.systemd:
+    name: redis-server
+    state: stopped
+    enabled: false
+  failed_when: false
+- name: Kernel settings
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-redis.conf
+    mode: '0644'
+    content: |
+      vm.overcommit_memory = 1
+      net.core.somaxconn = 1024
+- name: Apply sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: true
+- name: Disable THP service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/disable-thp.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Disable Transparent Huge Pages
+      Before=redis@7000.service redis@7001.service
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c 'test ! -e /sys/kernel/mm/transparent_hugepage/enabled || echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+      ExecStart=/bin/sh -c 'test ! -e /sys/kernel/mm/transparent_hugepage/defrag || echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+      RemainAfterExit=yes
+      [Install]
+      WantedBy=multi-user.target
+- name: Enable THP service
+  ansible.builtin.systemd:
+    name: disable-thp
+    state: started
+    enabled: true
+    daemon_reload: true

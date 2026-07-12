@@ -1,0 +1,41 @@
+bind 127.0.0.1 {{ redis_node_ip }}
+protected-mode yes
+port 0
+tls-port {{ redis_instance_port }}
+tls-cert-file {{ redis_tls_dir }}/node.crt
+tls-key-file {{ redis_tls_dir }}/node.key
+tls-ca-cert-file {{ redis_tls_dir }}/ca.crt
+tls-auth-clients yes
+tls-replication yes
+tls-cluster yes
+tls-protocols "TLSv1.2 TLSv1.3"
+daemonize no
+supervised systemd
+pidfile /run/redis/redis-{{ redis_instance_port }}.pid
+loglevel notice
+logfile {{ redis_log_root }}/{{ redis_instance_port }}/redis.log
+dir {{ redis_data_root }}/{{ redis_instance_port }}
+dbfilename dump.rdb
+appendonly yes
+appenddirname appendonlydir
+appendfilename appendonly.aof
+appendfsync everysec
+save 900 1
+save 300 10
+save 60 10000
+aclfile {{ redis_acl_file }}
+masteruser {{ redis_admin_user }}
+masterauth {{ redis_admin_password }}
+cluster-enabled yes
+cluster-config-file nodes-{{ redis_instance_port }}.conf
+cluster-node-timeout 5000
+cluster-require-full-coverage yes
+cluster-announce-ip {{ redis_node_ip }}
+cluster-announce-port {{ redis_instance_port }}
+cluster-announce-bus-port {{ redis_instance_port | int + redis_cluster_bus_offset }}
+replica-read-only yes
+maxmemory {{ redis_maxmemory }}
+maxmemory-policy {{ redis_maxmemory_policy }}
+slowlog-log-slower-than 10000
+slowlog-max-len 1024
+latency-monitor-threshold 100

@@ -1,0 +1,29 @@
+- name: Validate cluster, mTLS and ACL
+  hosts: redis_controller
+  become: true
+  tasks:
+    - name: Cluster check
+      ansible.builtin.command:
+        argv: [redis-cli,--tls,--cacert,/etc/redis/tls/ca.crt,--cert,/etc/redis/tls/admin.crt,--key,/etc/redis/tls/admin.key,--user,"{{ redis_admin_user }}",-a,"{{ redis_admin_password }}",--no-auth-warning,--cluster,check,192.168.56.11:7000]
+      register: cc
+      changed_when: false
+    - ansible.builtin.debug: {var: cc.stdout_lines}
+    - name: Cluster info
+      ansible.builtin.command:
+        argv: [redis-cli,--tls,--cacert,/etc/redis/tls/ca.crt,--cert,/etc/redis/tls/admin.crt,--key,/etc/redis/tls/admin.key,--user,"{{ redis_admin_user }}",-a,"{{ redis_admin_password }}",--no-auth-warning,-h,192.168.56.11,-p,"7000",CLUSTER,INFO]
+      register: ci
+      changed_when: false
+    - ansible.builtin.assert:
+        that:
+          - "'cluster_state:ok' in ci.stdout"
+          - "'cluster_known_nodes:6' in ci.stdout"
+          - "'cluster_size:3' in ci.stdout"
+    - name: Verify admin certificate
+      ansible.builtin.command: [openssl,verify,-CAfile,/etc/redis/tls/ca.crt,/etc/redis/tls/admin.crt]
+      changed_when: false
+    - name: ACL list
+      ansible.builtin.command:
+        argv: [redis-cli,--tls,--cacert,/etc/redis/tls/ca.crt,--cert,/etc/redis/tls/admin.crt,--key,/etc/redis/tls/admin.key,--user,"{{ redis_admin_user }}",-a,"{{ redis_admin_password }}",--no-auth-warning,-h,192.168.56.11,-p,"7000",ACL,LIST]
+      register: acl
+      changed_when: false
+    - ansible.builtin.debug: {var: acl.stdout_lines}

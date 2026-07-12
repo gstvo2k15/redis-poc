@@ -1,0 +1,21 @@
+redis_primary_port: 7000
+redis_replica_port: 7001
+redis_cluster_bus_offset: 10000
+redis_admin_user: admin
+redis_admin_password: ChangeMe-Admin-Redis
+redis_app_user: app
+redis_app_password: ChangeMe-App-Redis
+redis_backup_user: backup
+redis_backup_password: ChangeMe-Backup-Redis
+redis_maxmemory: 768mb
+redis_maxmemory_policy: allkeys-lru
+redis_data_root: /var/lib/redis
+redis_log_root: /var/log/redis
+redis_tls_dir: /etc/redis/tls
+redis_acl_file: /etc/redis/users.acl
+redis_pki_root: /vagrant/.lab/pki
+redis_backup_root: /vagrant/.lab/backups
+redis_nodes:
+  - {name: redis01, ip: 192.168.56.11}
+  - {name: redis02, ip: 192.168.56.12}
+  - {name: redis03, ip: 192.168.56.13}
